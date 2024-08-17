@@ -1,5 +1,6 @@
 package com.futo.fcast.receiver
 
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import kotlinx.serialization.decodeFromString
@@ -64,6 +65,13 @@ class FCastSession(outputStream: OutputStream, private val _remoteSocketAddress:
     private var _outputStream: DataOutputStream? = DataOutputStream(outputStream)
     private var _outputStreamLock = Object()
     val id = UUID.randomUUID()
+
+    private fun ensureNotMainThread() {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            Log.e("Utility", "Throwing exception because a function that should not be called on main thread, is called on main thread")
+            throw IllegalStateException("Cannot run on main thread")
+        }
+    }
 
     fun send(opcode: Opcode, message: String? = null) {
         ensureNotMainThread()
