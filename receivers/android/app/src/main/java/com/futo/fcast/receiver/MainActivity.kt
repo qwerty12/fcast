@@ -2,12 +2,9 @@ package com.futo.fcast.receiver
 
 import WebSocketListenerService
 import android.Manifest
-import android.app.Activity
 import android.app.AlertDialog
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.graphics.drawable.Animatable
 import android.net.Uri
@@ -18,7 +15,6 @@ import android.util.Base64
 import android.util.Log
 import android.util.TypedValue
 import android.view.View
-import android.view.WindowManager
 import android.widget.*
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,10 +32,9 @@ import com.journeyapps.barcodescanner.BarcodeEncoder
 import kotlinx.coroutines.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import okhttp3.OkHttpClient
-import java.io.InputStream
-import java.io.OutputStream
+import java.net.HttpURLConnection
 import java.net.NetworkInterface
+import java.net.URL
 
 
 class MainActivity : AppCompatActivity() {
@@ -57,7 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var _textScanToConnect: TextView
     private lateinit var _systemAlertWindowPermissionLauncher: ActivityResultLauncher<Intent>
     private var _updateAvailable: Boolean? = null
-    private var _updating: Boolean = false
+    private var _checkedForUpdate: Boolean = BuildConfig.IS_PLAYSTORE_VERSION
     private var _demoClickCount = 0
     private var _lastDemoToast: Toast? = null
     private val _preferenceFileKey get() = "$packageName.PREFERENCE_FILE_KEY"
@@ -107,9 +102,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         val buttonUpdatetextView = _buttonUpdate.getChildAt(0) as TextView
-        buttonUpdatetextView.text = "Toggle Discovery"
+        buttonUpdatetextView.text = if (_checkedForUpdate) "Toggle Discovery" else "Toggle Discovery, Update Check"
 
         _buttonUpdate.setOnClickListener {
+            if (!_checkedForUpdate) {
+                _checkedForUpdate = true
+                buttonUpdatetextView.text = "Toggle Discovery"
+
+                _text.visibility = View.VISIBLE
+                _updateSpinner.visibility = View.VISIBLE
+                (_updateSpinner.drawable as Animatable?)?.start()
+
+                lifecycleScope.launch(Dispatchers.IO) {
+                    checkForUpdates()
+                }
+            }
+
             val networkService: NetworkService = NetworkService.instance ?: return@setOnClickListener
 
             if (networkService.discoveryServiceIsRunning) {
@@ -133,19 +141,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (BuildConfig.IS_PLAYSTORE_VERSION) {
+        if (true) {
             _text.visibility = View.INVISIBLE
-            _buttonUpdate.visibility = View.INVISIBLE
             _updateSpinner.visibility = View.INVISIBLE
             (_updateSpinner.drawable as Animatable?)?.stop()
-        } else {
-            _text.visibility = View.VISIBLE
-            _updateSpinner.visibility = View.VISIBLE
-            (_updateSpinner.drawable as Animatable?)?.start()
-
-            lifecycleScope.launch(Dispatchers.IO) {
-                checkForUpdates()
-            }
         }
 
         val ips = getIPs()
@@ -383,7 +382,6 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             _updateSpinner.visibility = View.INVISIBLE
-            _buttonUpdate.visibility = View.INVISIBLE
             setText(null)
         }
 
@@ -391,140 +389,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadVersionCode(): Int? {
-        val client = OkHttpClient()
-        val request = okhttp3.Request.Builder()
-            .method("GET", null)
-            .url(VERSION_URL)
-            .build()
+        val connection = URL(VERSION_URL).openConnection() as HttpURLConnection
 
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful || response.body == null) {
-            return null
-        }
+        return try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.setRequestProperty("Connection", "close")
 
-        return response.body?.string()?.trim()?.toInt()
-    }
-
-    private fun update() {
-        _updateSpinner.visibility = View.VISIBLE
-        _buttonUpdate.visibility = Button.INVISIBLE
-        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        setText(resources.getText(R.string.downloading_update))
-        (_updateSpinner.drawable as Animatable?)?.start()
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            var inputStream: InputStream? = null
-            try {
-                val client = OkHttpClient()
-                val request = okhttp3.Request.Builder()
-                    .method("GET", null)
-                    .url(APK_URL)
-                    .build()
-
-                val response = client.newCall(request).execute()
-                val body = response.body
-                if (response.isSuccessful && body != null) {
-                    inputStream = body.byteStream()
-                    val dataLength = body.contentLength()
-                    install(inputStream, dataLength)
-                } else {
-                    throw Exception("Failed to download latest version of app.")
-                }
-            } catch (e: Throwable) {
-                Log.w(TAG, "Exception thrown while downloading and installing latest version of app.", e)
-                withContext(Dispatchers.Main) {
-                    onReceiveResult("Failed to download update.")
-                }
-            } finally {
-                inputStream?.close()
-            }
-        }
-    }
-
-    private suspend fun install(inputStream: InputStream, dataLength: Long) {
-        var lastProgressText = ""
-        var session: PackageInstaller.Session? = null
-
-        try {
-            Log.i(TAG, "Hooked InstallReceiver.onReceiveResult.")
-            InstallReceiver.onReceiveResult = { message -> onReceiveResult(message) }
-
-            val packageInstaller: PackageInstaller = packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-            val sessionId = packageInstaller.createSession(params)
-            session = packageInstaller.openSession(sessionId)
-
-            session.openWrite("package", 0, dataLength).use { sessionStream ->
-                inputStream.copyToOutputStream(dataLength, sessionStream) { progress ->
-                    val progressText = "${(progress * 100.0f).toInt()}%"
-                    if (lastProgressText != progressText) {
-                        lastProgressText = progressText
-
-                        lifecycleScope.launch(Dispatchers.Main) {
-                            _textProgress.text = progressText
-                        }
-                    }
-                }
-
-                session.fsync(sessionStream)
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                return null
             }
 
-            val intent = Intent(this, InstallReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                this,
-                0,
-                intent,
-                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-            val statusReceiver = pendingIntent.intentSender
-
-            session.commit(statusReceiver)
-            session.close()
-
-            withContext(Dispatchers.Main) {
-                _textProgress.text = ""
-                setText(resources.getText(R.string.installing_update))
+            connection.inputStream.bufferedReader().use { reader ->
+                reader.readLine()?.trim()?.toIntOrNull()
             }
-        } catch (e: Throwable) {
-            Log.w(TAG, "Exception thrown while downloading and installing latest version of app.", e)
-            session?.abandon()
-            withContext(Dispatchers.Main) {
-                onReceiveResult("Failed to download update.")
-            }
-        }
-        finally {
-            withContext(Dispatchers.Main) {
-                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
-        }
-    }
-
-    private fun onReceiveResult(result: String?) {
-        InstallReceiver.onReceiveResult = null
-        Log.i(TAG, "Cleared InstallReceiver.onReceiveResult handler.")
-
-        (_updateSpinner.drawable as Animatable?)?.stop()
-
-        if (result.isNullOrBlank()) {
-            _updateSpinner.setImageResource(R.drawable.ic_update_success)
-            setText(resources.getText(R.string.success))
-        } else {
-            _updateSpinner.setImageResource(R.drawable.ic_update_fail)
-            setText("${resources.getText(R.string.failed_to_update_with_error)}: '$result'.")
-        }
-    }
-
-    private fun InputStream.copyToOutputStream(inputStreamLength: Long, outputStream: OutputStream, onProgress: (Float) -> Unit) {
-        val buffer = ByteArray(16384)
-        var n: Int
-        var total = 0
-        val inputStreamLengthFloat = inputStreamLength.toFloat()
-
-        while (read(buffer).also { n = it } >= 0) {
-            total += n
-            outputStream.write(buffer, 0, n)
-            onProgress.invoke(total.toFloat() / inputStreamLengthFloat)
+        } finally {
+            connection.disconnect()
         }
     }
 
