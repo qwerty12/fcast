@@ -24,6 +24,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -237,6 +238,14 @@ class PlayerActivity : AppCompatActivity() {
             .setPreferredTextLanguage("df")
             .setSelectUndeterminedTextLanguage(true)
             .build()
+
+        trackSelector.setParameters(trackSelector.buildUponParameters().apply {
+            setAudioOffloadPreferences(
+                TrackSelectionParameters.AudioOffloadPreferences.DEFAULT.buildUpon().apply {
+                    setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
+                }.build()
+            )
+        })
 
         _exoPlayer = ExoPlayer.Builder(this)
             .setTrackSelector(trackSelector).build()
