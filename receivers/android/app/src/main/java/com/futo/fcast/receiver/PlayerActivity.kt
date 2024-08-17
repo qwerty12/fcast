@@ -14,16 +14,21 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -252,6 +257,21 @@ class PlayerActivity : AppCompatActivity() {
         _exoPlayer.addListener(_playerEventListener)
         _playerControlView.player = _exoPlayer
         _playerControlView.controllerAutoShow = false
+
+        val exoBasicControls = _playerControlView.findViewById<LinearLayout>(androidx.media3.ui.R.id.exo_basic_controls)
+        val exoSettings = exoBasicControls.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_settings)
+        exoSettings.onLongClickListener = View.OnLongClickListener { view: View ->
+            if (!_exoPlayer.isCommandAvailable(COMMAND_SET_TRACK_SELECTION_PARAMETERS))
+                return@OnLongClickListener false
+
+            _exoPlayer.trackSelectionParameters = _exoPlayer.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                .build()
+            Toast.makeText(view.context, "Audio track disabled", Toast.LENGTH_SHORT).show()
+            true
+        }
 
         Log.i(TAG, "Attached onConnectionAvailable listener.")
         _connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
