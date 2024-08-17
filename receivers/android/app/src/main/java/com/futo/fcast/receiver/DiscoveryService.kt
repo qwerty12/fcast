@@ -11,6 +11,9 @@ class DiscoveryService(private val _context: Context) {
     private val _registrationListenerTcp = DefaultRegistrationListener()
     private val _registrationListenerWs = DefaultRegistrationListener()
 
+    val running: Boolean
+        get() = _nsdManager != null
+
     private fun getDeviceName(): String {
         return "${android.os.Build.MANUFACTURER}-${android.os.Build.MODEL}"
     }

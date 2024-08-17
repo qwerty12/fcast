@@ -79,10 +79,6 @@ class NetworkService : Service() {
             }
         }
 
-        _discoveryService = DiscoveryService(this).apply {
-            start()
-        }
-
         _tcpListenerService = TcpListenerService(this) { onNewSession(it) }.apply {
             start()
         }
@@ -275,6 +271,19 @@ class NetworkService : Service() {
                 Log.e(TAG, "Failed to seek", e)
             }
         }
+    }
+
+    val discoveryServiceIsRunning: Boolean
+        get() = _discoveryService?.running == true
+
+    fun discoveryServiceStart() {
+        if (_discoveryService == null)
+            _discoveryService = DiscoveryService(this)
+        _discoveryService!!.start()
+    }
+    fun discoveryServiceStop() {
+        _discoveryService?.stop()
+        _discoveryService = null
     }
 
     companion object {

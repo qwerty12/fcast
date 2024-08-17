@@ -100,15 +100,25 @@ class MainActivity : AppCompatActivity() {
         startAnimations()
 
         setText(getString(R.string.checking_for_updates))
-        _buttonUpdate.visibility = View.INVISIBLE
+
+        val textAutomaticDiscovery = findViewById<TextView>(R.id.text_automatic_discovery)
+        if (NetworkService.instance == null || !NetworkService.instance!!.discoveryServiceIsRunning) {
+            textAutomaticDiscovery.visibility = View.INVISIBLE
+        }
+
+        val buttonUpdatetextView = _buttonUpdate.getChildAt(0) as TextView
+        buttonUpdatetextView.text = "Toggle Discovery"
 
         _buttonUpdate.setOnClickListener {
-            if (_updating) {
-                return@setOnClickListener
-            }
+            val networkService: NetworkService = NetworkService.instance ?: return@setOnClickListener
 
-            _updating = true
-            update()
+            if (networkService.discoveryServiceIsRunning) {
+                networkService.discoveryServiceStop()
+                textAutomaticDiscovery.visibility = View.INVISIBLE
+            } else {
+                networkService.discoveryServiceStart()
+                textAutomaticDiscovery.visibility = View.VISIBLE
+            }
         }
 
         _viewDemo.setOnClickListener {
