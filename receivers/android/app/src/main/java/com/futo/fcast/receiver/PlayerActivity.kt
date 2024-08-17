@@ -32,8 +32,7 @@ import androidx.media3.common.Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.cronet.CronetDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -46,8 +45,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import org.chromium.net.CronetEngine
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -442,13 +443,16 @@ class PlayerActivity : AppCompatActivity() {
             throw IllegalArgumentException("Either URL or content must be provided.")
         }
 
+        val cronetEngine = CronetEngine.Builder(this).build()
+        val cronetDataSourceFactory =
+            CronetDataSource.Factory(cronetEngine, Executors.newSingleThreadExecutor())
+
         val dataSourceFactory = if (playMessage.headers != null) {
-            val httpDataSourceFactory: HttpDataSource.Factory = DefaultHttpDataSource.Factory()
-            httpDataSourceFactory.setDefaultRequestProperties(playMessage.headers)
-            DefaultDataSource.Factory(this, httpDataSourceFactory)
+            cronetDataSourceFactory.setDefaultRequestProperties(playMessage.headers)
+            DefaultDataSource.Factory(this, cronetDataSourceFactory)
 
         } else {
-            DefaultDataSource.Factory(this)
+            DefaultDataSource.Factory(this, cronetDataSourceFactory)
         }
 
         val mediaItem = mediaItemBuilder.build()

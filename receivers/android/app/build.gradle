@@ -66,6 +66,9 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            ndk {
+                abiFilters 'armeabi-v7a'
+            }
         }
     }
     compileOptions {
@@ -91,6 +94,9 @@ dependencies {
     implementation 'androidx.media3:media3-ui:1.2.0'
     implementation 'androidx.media3:media3-exoplayer-dash:1.2.0'
     implementation 'androidx.media3:media3-exoplayer-hls:1.2.0'
+    implementation 'androidx.media3:media3-datasource-cronet:1.2.0'
+    implementation 'org.chromium.net:cronet-embedded:119.6045.31'
+    implementation 'org.chromium.net:cronet-api:119.6045.31'
     implementation 'com.aliucord:Aliuhook:main-SNAPSHOT'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
