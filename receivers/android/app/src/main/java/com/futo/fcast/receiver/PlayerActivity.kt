@@ -265,12 +265,20 @@ class PlayerActivity : AppCompatActivity() {
             if (!_exoPlayer.isCommandAvailable(COMMAND_SET_TRACK_SELECTION_PARAMETERS))
                 return@OnLongClickListener false
 
-            _exoPlayer.trackSelectionParameters = _exoPlayer.trackSelectionParameters
-                .buildUpon()
-                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-                .build()
-            Toast.makeText(view.context, "Audio track disabled", Toast.LENGTH_SHORT).show()
+            val new = !trackSelector.parameters.tunnelingEnabled
+            trackSelector.setParameters(
+                trackSelector.buildUponParameters()
+                    //.setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, new)
+                    .setRendererDisabled(C.TRACK_TYPE_AUDIO, new)
+                    .setTunnelingEnabled(new)
+                    .build()
+            )
+
+            Toast.makeText(
+                view.context,
+                if (new) "Audio track disabled" else "Audio track enabled",
+                Toast.LENGTH_SHORT
+            ).show()
             true
         }
 
