@@ -10,6 +10,10 @@ import java.nio.ByteBuffer
 class WebSocketListenerService(private val _networkService: NetworkService, private val _onNewSession: (session: FCastSession) -> Unit) : WebSocketServer(InetSocketAddress(PORT)) {
     private val _sockets = arrayListOf<WebSocket>()
 
+    init {
+        isTcpNoDelay = true
+    }
+
     override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
         val session = FCastSession(WebSocketOutputStream(conn), conn.remoteSocketAddress, _networkService)
         conn.setAttachment(session)
