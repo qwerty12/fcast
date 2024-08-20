@@ -59,6 +59,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var _textMessage: TextView
     private lateinit var _layoutOverlay: ConstraintLayout
     private lateinit var _exoPlayer: ExoPlayer
+    private lateinit var _subtitleView: View
     private var _shouldPlaybackRestartOnConnectivity: Boolean = false
     private lateinit var _connectivityManager: ConnectivityManager
     private var _wasPlaying = false
@@ -259,6 +260,7 @@ class PlayerActivity : AppCompatActivity() {
         _playerControlView.player = _exoPlayer
         _playerControlView.controllerAutoShow = false
 
+        _subtitleView = _playerControlView.findViewById(androidx.media3.ui.R.id.exo_subtitles)
         val exoBasicControls = _playerControlView.findViewById<LinearLayout>(androidx.media3.ui.R.id.exo_basic_controls)
         val exoSettings = exoBasicControls.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_settings)
         exoSettings.onLongClickListener = View.OnLongClickListener { view: View ->
@@ -425,6 +427,11 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
+        if (event.keyCode == KeyEvent.KEYCODE_CAPTIONS && event.action == KeyEvent.ACTION_DOWN) {
+            _subtitleView.visibility = if (_subtitleView.visibility != View.VISIBLE) View.VISIBLE else View.INVISIBLE
+            return true
+        }
+
         return super.dispatchKeyEvent(event)
     }
 
@@ -451,7 +458,13 @@ class PlayerActivity : AppCompatActivity() {
             throw IllegalArgumentException("Either URL or content must be provided.")
         }
 
-        val cronetEngine = CronetEngine.Builder(this).build()
+        val cronetEngine = CronetEngine.Builder(this)
+            .addQuicHint("youtube.com", 443, 443)
+            .addQuicHint("www.youtube.com", 443, 443)
+            .addQuicHint("youtubei.googleapis.com", 443, 443)
+            .addQuicHint("www.google.com", 443, 443)
+            .addQuicHint("google.com", 443, 443)
+            .build()
         val cronetDataSourceFactory =
             CronetDataSource.Factory(cronetEngine, Executors.newSingleThreadExecutor())
 
@@ -479,6 +492,7 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         setStatus(true, null)
+        _subtitleView.visibility = View.VISIBLE
         _wasPlaying = false
         _exoPlayer.playWhenReady = true
         _exoPlayer.prepare()
