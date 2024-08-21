@@ -70,10 +70,7 @@ class TcpListenerService(private val _networkService: NetworkService, private va
 
                     while (!_stopped) {
                         val clientSocket = _serverSocket!!.accept() ?: break
-                        SocketOptionsUtil.enableTcpQuickAck(clientSocket)
-                        clientSocket.tcpNoDelay = true
-                        clientSocket.keepAlive = true
-                        clientSocket.trafficClass = SocketOptionsUtil.IPTOS_LOWDELAY
+                        SocketOptionsUtil.setLowDelay(clientSocket)
 
                         val clientThread = Thread {
                             try {
