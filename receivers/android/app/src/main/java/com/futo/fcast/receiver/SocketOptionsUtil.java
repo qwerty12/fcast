@@ -11,7 +11,7 @@ import java.net.Socket;
 
 @SuppressLint("DiscouragedPrivateApi")
 class SocketOptionsUtil {
-    static final int IPTOS_LOWDELAY = 0x10;
+    private static final int IPTOS_LOWDELAY = 0x10;
     private static final int TCP_QUICKACK = 12;
     private static final Method socketGetFileDescriptor;
 
@@ -26,10 +26,25 @@ class SocketOptionsUtil {
     }
 
     @SuppressLint("NewApi")
-    static void enableTcpQuickAck(final Socket socket) {
-        try {
-            Os.setsockoptInt((FileDescriptor) socketGetFileDescriptor.invoke(socket), OsConstants.IPPROTO_TCP, TCP_QUICKACK, 1);
-        } catch (final Throwable ignored) {}
+    private static void enableTcpQuickAck(final Socket socket) throws Throwable {
+        Os.setsockoptInt((FileDescriptor) socketGetFileDescriptor.invoke(socket), OsConstants.IPPROTO_TCP, TCP_QUICKACK, 1);
     }
 
+    static void setLowDelay(final Socket socket) {
+        if (socket == null)
+            return;
+
+        try {
+            socket.setTcpNoDelay(true);
+        } catch (final Throwable ignored) {}
+        try {
+            enableTcpQuickAck(socket);
+        } catch (final Throwable ignored) {}
+        try {
+            socket.setKeepAlive(true);
+        } catch (final Throwable ignored) {}
+        try {
+            socket.setTrafficClass(IPTOS_LOWDELAY);
+        } catch (final Throwable ignored) {}
+    }
 }

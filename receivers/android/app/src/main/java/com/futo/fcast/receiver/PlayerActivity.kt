@@ -28,7 +28,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -45,10 +44,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import org.chromium.net.CronetEngine
 import java.io.File
 import java.io.FileOutputStream
-import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -63,6 +60,7 @@ class PlayerActivity : AppCompatActivity() {
     private var _shouldPlaybackRestartOnConnectivity: Boolean = false
     private lateinit var _connectivityManager: ConnectivityManager
     private var _wasPlaying = false
+    private var speedToast: Toast? = null
 
     private val _connectivityEvents = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -263,25 +261,8 @@ class PlayerActivity : AppCompatActivity() {
         _subtitleView = _playerControlView.findViewById(androidx.media3.ui.R.id.exo_subtitles)
         val exoBasicControls = _playerControlView.findViewById<LinearLayout>(androidx.media3.ui.R.id.exo_basic_controls)
         val exoSettings = exoBasicControls.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_settings)
-        exoSettings.onLongClickListener = View.OnLongClickListener { view: View ->
-            if (!_exoPlayer.isCommandAvailable(COMMAND_SET_TRACK_SELECTION_PARAMETERS))
-                return@OnLongClickListener false
-
-            val new = !trackSelector.parameters.tunnelingEnabled
-            trackSelector.setParameters(
-                trackSelector.buildUponParameters()
-                    //.setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, new)
-                    .setRendererDisabled(C.TRACK_TYPE_AUDIO, new)
-                    .setTunnelingEnabled(new)
-                    .build()
-            )
-
-            Toast.makeText(
-                view.context,
-                if (new) "Audio track disabled" else "Audio track enabled",
-                Toast.LENGTH_SHORT
-            ).show()
-            true
+        exoSettings.onLongClickListener = View.OnLongClickListener {
+            return@OnLongClickListener toggleTunneling()
         }
 
         Log.i(TAG, "Attached onConnectionAvailable listener.")
@@ -408,14 +389,58 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     @OptIn(UnstableApi::class)
+    private fun setTunneling(new: Boolean, skipToast: Boolean = true): Boolean {
+        if (!_exoPlayer.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS))
+            return false
+
+        val trackSelector = _exoPlayer.trackSelector as? DefaultTrackSelector ?: return false
+        if (trackSelector.parameters.tunnelingEnabled == new)
+            return true
+
+        trackSelector.setParameters(
+            trackSelector.buildUponParameters()
+                //.setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, new)
+                .setRendererDisabled(C.TRACK_TYPE_AUDIO, new)
+                .setTunnelingEnabled(new)
+                .build()
+        )
+
+        if (!skipToast) {
+            Toast.makeText(
+                this,
+                if (new) "Audio track disabled" else "Audio track enabled",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        return true
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun toggleTunneling(): Boolean {
+        val trackSelector = _exoPlayer.trackSelector as? DefaultTrackSelector ?: return false
+        return setTunneling(!trackSelector.parameters.tunnelingEnabled, false)
+    }
+
+    private fun setSpeedKey(speed: Float) {
+        if (_exoPlayer.playbackParameters.speed == speed || !_exoPlayer.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH))
+            return
+        _exoPlayer.setPlaybackSpeed(speed)
+        speedToast?.cancel()
+        speedToast = Toast.makeText(this, speed.toString() + "x", Toast.LENGTH_SHORT)
+        speedToast!!.show()
+    }
+
+    @OptIn(UnstableApi::class)
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
         if (_playerControlView.isControllerFullyVisible) {
-            if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
                 _playerControlView.hideController()
                 return true
             }
         } else {
-            when (event.keyCode) {
+            when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> {
                     _exoPlayer.seekTo(max(0, _exoPlayer.currentPosition - SEEK_BACKWARD_MILLIS))
                     return true
@@ -427,8 +452,38 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        if (event.keyCode == KeyEvent.KEYCODE_CAPTIONS && event.action == KeyEvent.ACTION_DOWN) {
+        if (keyCode == KeyEvent.KEYCODE_CAPTIONS && event.action == KeyEvent.ACTION_DOWN) {
             _subtitleView.visibility = if (_subtitleView.visibility != View.VISIBLE) View.VISIBLE else View.INVISIBLE
+            return true
+        }
+
+        if (keyCode == KeyEvent.KEYCODE_PROG_RED && event.action == KeyEvent.ACTION_DOWN) {
+            setSpeedKey(1.0f)
+            setTunneling(false)
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_PROG_GREEN && event.action == KeyEvent.ACTION_DOWN) {
+            setTunneling(false)
+            setSpeedKey(1.25f)
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_PROG_YELLOW && event.action == KeyEvent.ACTION_DOWN) {
+            setTunneling(false)
+            when (_exoPlayer.playbackParameters.speed) {
+                1.45f -> setSpeedKey(1.75f)
+                else -> setSpeedKey(1.45f)
+            }
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_PROG_BLUE && event.action == KeyEvent.ACTION_DOWN) {
+            if (_exoPlayer.playbackParameters.speed == 2.25f) {
+                setTunneling(false)
+                setSpeedKey(2.0f)
+            } else {
+                setTunneling(true)
+                setSpeedKey(2.25f)
+            }
+
             return true
         }
 
@@ -458,20 +513,12 @@ class PlayerActivity : AppCompatActivity() {
             throw IllegalArgumentException("Either URL or content must be provided.")
         }
 
-        val cronetEngine = CronetEngine.Builder(this)
-            .addQuicHint("youtube.com", 443, 443)
-            .addQuicHint("www.youtube.com", 443, 443)
-            .addQuicHint("youtubei.googleapis.com", 443, 443)
-            .addQuicHint("www.google.com", 443, 443)
-            .addQuicHint("google.com", 443, 443)
-            .build()
         val cronetDataSourceFactory =
-            CronetDataSource.Factory(cronetEngine, Executors.newSingleThreadExecutor())
+            CronetDataSource.Factory(FCastApplication.getCronetEngine(), FCastApplication.getCronetCallbackExecutorService())
 
         val dataSourceFactory = if (playMessage.headers != null) {
             cronetDataSourceFactory.setDefaultRequestProperties(playMessage.headers)
             DefaultDataSource.Factory(this, cronetDataSourceFactory)
-
         } else {
             DefaultDataSource.Factory(this, cronetDataSourceFactory)
         }
