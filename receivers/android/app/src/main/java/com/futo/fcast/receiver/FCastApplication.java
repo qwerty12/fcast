@@ -7,14 +7,29 @@ import androidx.annotation.OptIn;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.ui.PlayerControlView;
 
+import org.chromium.net.CronetEngine;
+
 import java.lang.reflect.Constructor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 
 public final class FCastApplication extends Application {
+    private static CronetEngine cronetEngine;
+    private static ExecutorService cronetCallbackExecutorService;
+
+    public static CronetEngine getCronetEngine() {
+        return cronetEngine;
+    }
+
+    public static ExecutorService getCronetCallbackExecutorService() {
+        return cronetCallbackExecutorService;
+    }
+
     @OptIn(markerClass = UnstableApi.class)
-    static void ExoPlayerSpeedSelectorExtender() throws ClassNotFoundException, NoSuchMethodException {
+    private static void ExoPlayerSpeedSelectorExtender() throws ClassNotFoundException, NoSuchMethodException {
         final float[] PLAYBACK_SPEEDS_ADDITIONAL = {2.25f};
         final String[] PLAYBACK_SPEED_TEXTS_ADDITIONAL = {"2.25x"};
 
@@ -51,5 +66,12 @@ public final class FCastApplication extends Application {
         try {
             ExoPlayerSpeedSelectorExtender();
         } catch (final Throwable ignored) {}
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        cronetEngine = new CronetEngine.Builder(this).build();
+        cronetCallbackExecutorService = Executors.newFixedThreadPool(Math.min(Runtime.getRuntime().availableProcessors(), 4));
     }
 }
