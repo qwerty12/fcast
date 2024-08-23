@@ -28,6 +28,7 @@ android {
         targetSdk 34
         versionCode currentVersionCode
         versionName currentVersionName
+        resConfigs "en"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
