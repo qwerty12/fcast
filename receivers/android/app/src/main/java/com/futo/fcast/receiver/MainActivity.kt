@@ -45,9 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var _updateSpinner: ImageView
     private lateinit var _imageSpinner: ImageView
     private lateinit var _layoutConnectionInfo: ConstraintLayout
-    private lateinit var _videoBackground: PlayerView
     private lateinit var _viewDemo: View
-    private lateinit var _player: ExoPlayer
     private lateinit var _imageQr: ImageView
     private lateinit var _textScanToConnect: TextView
     private lateinit var _systemAlertWindowPermissionLauncher: ActivityResultLauncher<Intent>
@@ -86,12 +84,10 @@ class MainActivity : AppCompatActivity() {
         _updateSpinner = findViewById(R.id.update_spinner)
         _imageSpinner = findViewById(R.id.image_spinner)
         _layoutConnectionInfo = findViewById(R.id.layout_connection_info)
-        _videoBackground = findViewById(R.id.video_background)
         _viewDemo = findViewById(R.id.view_demo)
         _imageQr = findViewById(R.id.image_qr)
         _textScanToConnect = findViewById(R.id.text_scan_to_connect)
 
-        startVideo()
         startAnimations()
 
         setText(getString(R.string.checking_for_updates))
@@ -177,22 +173,9 @@ class MainActivity : AppCompatActivity() {
         requestSystemAlertWindowPermission()
     }
 
-    override fun onPause() {
-        super.onPause()
-        _player.playWhenReady = false
-        _player.pause()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        _player.playWhenReady = true
-        _player.play()
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         InstallReceiver.onReceiveResult = null
-        _player.release()
         NetworkService.activityCount--
     }
 
@@ -204,17 +187,6 @@ class MainActivity : AppCompatActivity() {
     private fun restartService() {
         NetworkService.instance?.stopSelf()
         startService(Intent(this, NetworkService::class.java))
-    }
-
-    private fun startVideo() {
-        _player = ExoPlayer.Builder(this).build()
-        _videoBackground.player = _player
-
-        val mediaItem = MediaItem.fromUri(Uri.parse("android.resource://" + packageName + "/" + R.raw.c))
-        _player.setMediaItem(mediaItem)
-        _player.prepare()
-        _player.repeatMode = Player.REPEAT_MODE_ALL
-        _player.playWhenReady = true
     }
 
     private fun startAnimations() {
