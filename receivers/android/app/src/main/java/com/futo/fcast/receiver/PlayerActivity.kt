@@ -32,6 +32,7 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.cronet.CronetDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -252,7 +253,9 @@ class PlayerActivity : AppCompatActivity() {
             )
         })
 
-        _exoPlayer = ExoPlayer.Builder(this)
+        val renderersFactory =
+            DefaultRenderersFactory(this).forceEnableMediaCodecAsynchronousQueueing()
+        _exoPlayer = ExoPlayer.Builder(this, renderersFactory)
             .setTrackSelector(trackSelector).build()
         _exoPlayer.addListener(_playerEventListener)
         _playerControlView.player = _exoPlayer
