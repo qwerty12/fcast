@@ -8,15 +8,19 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.media3.ui.PlayerControlView;
 
 import org.chromium.net.CronetEngine;
+import org.chromium.net.impl.ImplVersion;
+import org.chromium.net.impl.UserAgent;
 
 import java.lang.reflect.Constructor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
 
 public final class FCastApplication extends Application {
+    private final static String USER_AGENT = "com.google.ios.youtube/19.14.3(iPhone15,4; U; CPU iOS 17_4_1 like Mac OS X; US)";
     private static CronetEngine cronetEngine;
     private static ExecutorService cronetCallbackExecutorService;
 
@@ -66,12 +70,39 @@ public final class FCastApplication extends Application {
         try {
             ExoPlayerSpeedSelectorExtender();
         } catch (final Throwable ignored) {}
+
+        try {
+            XposedBridge.hookMethod(UserAgent.class.getDeclaredMethod("from", Context.class), new XC_MethodReplacement() {
+                @Override
+                protected Object replaceHookedMethod(MethodHookParam param) throws Throwable {
+                    return USER_AGENT;
+                }
+            });
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
+
+        try {
+            XposedBridge.hookMethod(UserAgent.class.getDeclaredMethod("getQuicUserAgentIdFrom", Context.class), new XC_MethodReplacement() {
+                @Override
+                protected Object replaceHookedMethod(MethodHookParam param) throws Throwable {
+                    return "Cronet/" + ImplVersion.getCronetVersion();
+                }
+            });
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        cronetEngine = new CronetEngine.Builder(this).build();
+        cronetEngine = new CronetEngine.Builder(this)
+                .setUserAgent(USER_AGENT)
+                .enableBrotli(false)
+                .enableQuic(true)
+                .enableHttp2(true)
+                .build();
         cronetCallbackExecutorService = Executors.newFixedThreadPool(Math.min(Runtime.getRuntime().availableProcessors(), 4));
     }
 }
