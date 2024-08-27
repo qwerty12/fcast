@@ -518,6 +518,8 @@ class PlayerActivity : AppCompatActivity() {
 
         val cronetDataSourceFactory =
             CronetDataSource.Factory(FCastApplication.getCronetEngine(), FCastApplication.getCronetCallbackExecutorService())
+                .setConnectionTimeoutMs(30000)
+                .setReadTimeoutMs(30000)
 
         val dataSourceFactory = if (playMessage.headers != null) {
             cronetDataSourceFactory.setDefaultRequestProperties(playMessage.headers)
