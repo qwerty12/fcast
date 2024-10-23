@@ -26,8 +26,10 @@ class SocketOptionsUtil {
     }
 
     @SuppressLint("NewApi")
-    private static void enableTcpQuickAck(final Socket socket) throws Throwable {
-        Os.setsockoptInt((FileDescriptor) socketGetFileDescriptor.invoke(socket), OsConstants.IPPROTO_TCP, TCP_QUICKACK, 1);
+    private static void enableTcpQuickAck(final Socket socket) {
+        try {
+            Os.setsockoptInt((FileDescriptor) socketGetFileDescriptor.invoke(socket), OsConstants.IPPROTO_TCP, TCP_QUICKACK, 1);
+        } catch (final Throwable ignored) {}
     }
 
     static void setLowDelay(final Socket socket) {
@@ -37,9 +39,7 @@ class SocketOptionsUtil {
         try {
             socket.setTcpNoDelay(true);
         } catch (final Throwable ignored) {}
-        try {
-            enableTcpQuickAck(socket);
-        } catch (final Throwable ignored) {}
+        enableTcpQuickAck(socket);
         try {
             socket.setKeepAlive(true);
         } catch (final Throwable ignored) {}
