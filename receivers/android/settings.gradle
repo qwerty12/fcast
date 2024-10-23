@@ -11,7 +11,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven {
-            url = uri("https://maven.aliucord.com/snapshots")
+            url = uri('https://maven.aliucord.com/snapshots')
         }
     }
 }

@@ -78,7 +78,7 @@ public final class FCastApplication extends Application {
                     return USER_AGENT;
                 }
             });
-        } catch (NoSuchMethodException e) {
+        } catch (final NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
 
@@ -89,7 +89,7 @@ public final class FCastApplication extends Application {
                     return "Cronet/" + ImplVersion.getCronetVersion();
                 }
             });
-        } catch (NoSuchMethodException e) {
+        } catch (final NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
     }

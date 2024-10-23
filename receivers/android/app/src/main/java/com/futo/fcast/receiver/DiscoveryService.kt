@@ -11,9 +11,6 @@ class DiscoveryService(private val _context: Context) {
     private val _registrationListenerTcp = DefaultRegistrationListener()
     private val _registrationListenerWs = DefaultRegistrationListener()
 
-    val running: Boolean
-        get() = _nsdManager != null
-
     private fun getDeviceName(): String {
         return "${android.os.Build.MANUFACTURER}-${android.os.Build.MODEL}"
     }
@@ -73,6 +70,8 @@ class DiscoveryService(private val _context: Context) {
             Log.e("DiscoveryService", "Service unregistration failed: errorCode=$errorCode")
         }
     }
+
+    val running: Boolean get() = _nsdManager != null
 
     companion object {
         private const val TAG = "DiscoveryService"

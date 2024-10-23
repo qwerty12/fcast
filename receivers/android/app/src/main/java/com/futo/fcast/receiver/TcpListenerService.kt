@@ -71,7 +71,6 @@ class TcpListenerService(private val _networkService: NetworkService, private va
                     while (!_stopped) {
                         val clientSocket = _serverSocket!!.accept() ?: break
                         SocketOptionsUtil.setLowDelay(clientSocket)
-
                         val clientThread = Thread {
                             try {
                                 Log.i(TAG, "New connection received from ${clientSocket.remoteSocketAddress}")

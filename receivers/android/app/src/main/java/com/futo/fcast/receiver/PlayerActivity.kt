@@ -1,7 +1,11 @@
 package com.futo.fcast.receiver
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.drawable.Animatable
+import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -14,9 +18,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
-import android.widget.ImageButton
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -62,6 +64,10 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var _connectivityManager: ConnectivityManager
     private var _wasPlaying = false
     private var speedToast: Toast? = null
+    private lateinit var _audioManager: AudioManager
+    private var _maxVolume: Double = 0.0
+    private var _isMuted: Boolean = false
+    private var _volIndex: Int = 0
 
     private val _connectivityEvents = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -155,20 +161,50 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        override fun onVolumeChanged(volume: Float) {
-            super.onVolumeChanged(volume)
-            lifecycleScope.launch(Dispatchers.IO) {
-                try {
-                    NetworkService.instance?.sendCastVolumeUpdate(VolumeUpdateMessage(System.currentTimeMillis(), volume.toDouble()))
-                } catch (e: Throwable) {
-                    Log.e(TAG, "Unhandled error sending volume update", e)
-                }
-            }
-        }
-
         override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
             super.onPlaybackParametersChanged(playbackParameters)
             sendPlaybackUpdate()
+        }
+    }
+
+    private val _deviceVolumeMuteListener = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -2) != AudioManager.STREAM_MUSIC)
+                return
+
+            when (intent.action) {
+                "android.media.VOLUME_CHANGED_ACTION" -> {
+                    val newVolume = intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_VALUE", _volIndex)
+                    if (newVolume == _volIndex)
+                        return
+                    _volIndex = newVolume
+                    _isMuted = _volIndex == 0
+                }
+                "android.media.STREAM_MUTE_CHANGED_ACTION" -> {
+                    val newMuted = intent.getBooleanExtra("android.media.EXTRA_STREAM_VOLUME_MUTED", _isMuted)
+                    if (newMuted == _isMuted || _volIndex == 0)
+                        return
+                    _isMuted = newMuted
+                }
+            }
+
+            setSpeedKey(_exoPlayer.playbackParameters.speed)
+            updateCastVolume()
+        }
+    }
+
+    private fun updateCastVolume() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                NetworkService.instance?.sendCastVolumeUpdate(
+                    VolumeUpdateMessage(
+                        System.currentTimeMillis(),
+                        if (!_isMuted) _volIndex / _maxVolume else 0.0
+                    )
+                )
+            } catch (e: Throwable) {
+                Log.e(TAG, "Unhandled error sending volume update", e)
+            }
         }
     }
 
@@ -261,12 +297,14 @@ class PlayerActivity : AppCompatActivity() {
         _playerControlView.player = _exoPlayer
         _playerControlView.controllerAutoShow = false
 
+        _audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        _maxVolume = _audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toDouble()
+        _volIndex = _audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        _isMuted = if (_volIndex == 0) true else _audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
+        registerReceiver(_deviceVolumeMuteListener, IntentFilter("android.media.VOLUME_CHANGED_ACTION"))
+        registerReceiver(_deviceVolumeMuteListener, IntentFilter("android.media.STREAM_MUTE_CHANGED_ACTION"))
+
         _subtitleView = _playerControlView.findViewById(androidx.media3.ui.R.id.exo_subtitles)
-        val exoBasicControls = _playerControlView.findViewById<LinearLayout>(androidx.media3.ui.R.id.exo_basic_controls)
-        val exoSettings = exoBasicControls.findViewById<ImageButton>(androidx.media3.ui.R.id.exo_settings)
-        exoSettings.onLongClickListener = View.OnLongClickListener {
-            return@OnLongClickListener toggleTunneling()
-        }
 
         Log.i(TAG, "Attached onConnectionAvailable listener.")
         _connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -291,6 +329,7 @@ class PlayerActivity : AppCompatActivity() {
         instance = this
         NetworkService.activityCount++
 
+        updateCastVolume()
         lifecycleScope.launch(Dispatchers.Main) {
             while (lifecycleScope.isActive) {
                 try {
@@ -370,6 +409,7 @@ class PlayerActivity : AppCompatActivity() {
         Log.i(TAG, "onDestroy")
 
         instance = null
+        unregisterReceiver(_deviceVolumeMuteListener)
         _connectivityManager.unregisterNetworkCallback(_connectivityEvents)
         _exoPlayer.removeListener(_playerEventListener)
         _exoPlayer.stop()
@@ -392,46 +432,47 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     @OptIn(UnstableApi::class)
-    private fun setTunneling(new: Boolean, skipToast: Boolean = true): Boolean {
-        if (!_exoPlayer.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS))
-            return false
+    private fun setTunneling(new: Boolean, disableAudio: Boolean) {
+        //if (!_exoPlayer.isCommandAvailable(Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS))
+        //    return
+        val trackSelector = _exoPlayer.trackSelector as? DefaultTrackSelector ?: return
 
-        val trackSelector = _exoPlayer.trackSelector as? DefaultTrackSelector ?: return false
-        if (trackSelector.parameters.tunnelingEnabled == new)
-            return true
+        if (trackSelector.parameters.tunnelingEnabled == new && trackSelector.parameters.getRendererDisabled(C.TRACK_TYPE_AUDIO) == disableAudio)
+            return
 
         trackSelector.setParameters(
             trackSelector.buildUponParameters()
-                //.setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, new)
-                .setRendererDisabled(C.TRACK_TYPE_AUDIO, new)
+                //.setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, disableAudio)
+                .setRendererDisabled(C.TRACK_TYPE_AUDIO, disableAudio)
                 .setTunnelingEnabled(new)
                 .build()
         )
-
-        if (!skipToast) {
-            Toast.makeText(
-                this,
-                if (new) "Audio track disabled" else "Audio track enabled",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-
-        return true
-    }
-
-    @OptIn(UnstableApi::class)
-    private fun toggleTunneling(): Boolean {
-        val trackSelector = _exoPlayer.trackSelector as? DefaultTrackSelector ?: return false
-        return setTunneling(!trackSelector.parameters.tunnelingEnabled, false)
     }
 
     private fun setSpeedKey(speed: Float) {
-        if (_exoPlayer.playbackParameters.speed == speed || !_exoPlayer.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH))
-            return
-        _exoPlayer.setPlaybackSpeed(speed)
-        speedToast?.cancel()
-        speedToast = Toast.makeText(this, speed.toString() + "x", Toast.LENGTH_SHORT)
-        speedToast!!.show()
+        val isSpeedSame = _exoPlayer.playbackParameters.speed == speed //|| !_exoPlayer.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)
+
+        if (speed == 1.0f) {
+            if (!isSpeedSame) {
+                _exoPlayer.setPlaybackSpeed(speed)
+                setTunneling(new = true, disableAudio = false)
+            }
+        } else if (speed >= 2.24f) {
+            if (!isSpeedSame) {
+                setTunneling(new = true, disableAudio = true)
+                _exoPlayer.setPlaybackSpeed(speed)
+            }
+        } else {
+            setTunneling(_isMuted, _isMuted)
+            if (!isSpeedSame)
+                _exoPlayer.setPlaybackSpeed(speed)
+        }
+
+        if (!isSpeedSame) {
+            speedToast?.cancel()
+            speedToast = Toast.makeText(this, "${speed}x", Toast.LENGTH_SHORT)
+            speedToast!!.show()
+        }
     }
 
     @OptIn(UnstableApi::class)
@@ -462,16 +503,13 @@ class PlayerActivity : AppCompatActivity() {
 
         if (keyCode == KeyEvent.KEYCODE_PROG_RED && event.action == KeyEvent.ACTION_DOWN) {
             setSpeedKey(1.0f)
-            setTunneling(false)
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_PROG_GREEN && event.action == KeyEvent.ACTION_DOWN) {
-            setTunneling(false)
             setSpeedKey(1.25f)
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_PROG_YELLOW && event.action == KeyEvent.ACTION_DOWN) {
-            setTunneling(false)
             when (_exoPlayer.playbackParameters.speed) {
                 1.45f -> setSpeedKey(1.75f)
                 else -> setSpeedKey(1.45f)
@@ -479,14 +517,10 @@ class PlayerActivity : AppCompatActivity() {
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_PROG_BLUE && event.action == KeyEvent.ACTION_DOWN) {
-            if (_exoPlayer.playbackParameters.speed == 2.25f) {
-                setTunneling(false)
-                setSpeedKey(2.0f)
-            } else {
-                setTunneling(true)
-                setSpeedKey(2.25f)
+            when (_exoPlayer.playbackParameters.speed) {
+                2.25f -> setSpeedKey(2.0f)
+                else -> setSpeedKey(2.25f)
             }
-
             return true
         }
 
@@ -537,7 +571,7 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         _exoPlayer.setMediaSource(mediaSource)
-        _exoPlayer.setPlaybackSpeed(playMessage.speed?.toFloat() ?: 1.0f)
+        setSpeedKey(playMessage.speed?.toFloat() ?: 1.0f)
 
         if (playMessage.time != null) {
             _exoPlayer.seekTo((playMessage.time * 1000).toLong())
@@ -568,15 +602,21 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     fun setSpeed(setSpeedMessage: SetSpeedMessage) {
-        _exoPlayer.setPlaybackSpeed(setSpeedMessage.speed.toFloat())
+        setSpeedKey(setSpeedMessage.speed.toFloat())
     }
 
     fun setVolume(setVolumeMessage: SetVolumeMessage) {
-        _exoPlayer.volume = setVolumeMessage.volume.toFloat()
+        val volume = (setVolumeMessage.volume * _maxVolume).toInt()
+        if (volume > 0) {
+            _audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
+            _audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+        } else {
+            _audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
+        }
     }
 
     companion object {
-        var instance: PlayerActivity? = null
+        var instance: PlayerActivity? by weak()
         private const val TAG = "PlayerActivity"
 
         private const val SEEK_BACKWARD_MILLIS = 10_000

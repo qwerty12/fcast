@@ -24,4 +24,4 @@
 
 -repackageclasses
 -overloadaggressively
--optimizationpasses 5
+-optimizationpasses 10
